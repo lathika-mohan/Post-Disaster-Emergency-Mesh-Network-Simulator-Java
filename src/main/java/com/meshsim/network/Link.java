@@ -2,27 +2,60 @@ package com.meshsim.network;
 
 import com.meshsim.model.Node;
 
-/** An undirected edge between two nodes in the mesh graph. */
-public class Link {
-    private final Node a, b;
-    private final double distance;
+import java.util.Objects;
 
-    public Link(Node a, Node b, double distance) {
+/** An edge between two nodes with a computed quality (0..1) used as routing weight input. */
+public final class Link {
+
+    private final Node a;
+    private final Node b;
+    private final double quality;
+
+    public Link(Node a, Node b, double quality) {
         this.a = a;
         this.b = b;
-        this.distance = distance;
+        this.quality = quality;
     }
 
-    public Node getA() { return a; }
-    public Node getB() { return b; }
-    public double getDistance() { return distance; }
+    public Node a() {
+        return a;
+    }
 
-    public Node other(Node from) {
-        return from.getId() == a.getId() ? b : a;
+    public Node b() {
+        return b;
+    }
+
+    public double quality() {
+        return quality;
+    }
+
+    public Node other(Node n) {
+        if (n.equals(a)) return b;
+        if (n.equals(b)) return a;
+        throw new IllegalArgumentException("Node " + n.id() + " is not part of this link");
+    }
+
+    /** Routing weight: cheaper (lower) for higher-quality links. */
+    public double weight() {
+        return 1.0 / Math.max(0.01, quality);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Link other)) return false;
+        return (a.equals(other.a) && b.equals(other.b))
+                || (a.equals(other.b) && b.equals(other.a));
+    }
+
+    @Override
+    public int hashCode() {
+        // order-independent so a-b and b-a hash the same
+        return Objects.hash(a.id()) ^ Objects.hash(b.id());
     }
 
     @Override
     public String toString() {
-        return String.format("(%d <-> %d, d=%.1f)", a.getId(), b.getId(), distance);
+        return "%s<->%s (q=%.2f)".formatted(a.id(), b.id(), quality);
     }
 }

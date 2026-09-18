@@ -1,68 +1,83 @@
 package com.meshsim.routing;
 
-import com.meshsim.model.Node;
 import com.meshsim.network.Link;
 import com.meshsim.network.MeshNetwork;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.Set;
+import java.util.HashSet;
 
-/**
- * Dijkstra router: O(E + V log V), minimizes cumulative Euclidean distance
- * (a proxy for transmission energy / latency along the route).
- */
-public class DijkstraRouter implements Router {
+/** Weighted shortest path where weight is derived from link quality, not raw distance. */
+public class DijkstraRouter extends AbstractRouter {
+
+    private record Candidate(String nodeId, double cost) {
+    }
+
+    public DijkstraRouter(MeshNetwork net) {
+        super(net);
+    }
 
     @Override
-    public String name() { return "Dijkstra (min weighted cost)"; }
+    protected List<String> search(String sourceId, String destId) {
+        Map<String, Double> best = new HashMap<>();
+        Map<String, String> cameFrom = new HashMap<>();
+        Set<String> settled = new HashSet<>();
+        PriorityQueue<Candidate> frontier =
+                new PriorityQueue<>(Comparator.comparingDouble(Candidate::cost));
 
-    @Override
-    public Route findRoute(MeshNetwork network, int sourceId, int destId) {
-        Node source = network.getNode(sourceId);
-        Node dest = network.getNode(destId);
-        if (source == null || dest == null || !source.isActive() || !dest.isActive()) {
-            return Route.notFound();
-        }
-
-        Map<Integer, Double> dist = new HashMap<>();
-        Map<Integer, Integer> parent = new HashMap<>();
-        for (Node n : network.getNodes()) dist.put(n.getId(), Double.POSITIVE_INFINITY);
-        dist.put(sourceId, 0.0);
-
-        // frontier entries: {nodeId, cumulativeDistance}
-        PriorityQueue<double[]> frontier = new PriorityQueue<>(Comparator.comparingDouble(e -> e[1]));
-        frontier.add(new double[]{sourceId, 0.0});
-        Set<Integer> settled = new HashSet<>();
+        best.put(sourceId, 0.0);
+        frontier.add(new Candidate(sourceId, 0.0));
 
         while (!frontier.isEmpty()) {
-            double[] top = frontier.poll();
-            int current = (int) top[0];
-            if (settled.contains(current)) continue;
-            settled.add(current);
-            if (current == destId) break;
+            Candidate current = frontier.poll();
+            if (!settled.add(current.nodeId())) continue;
+            if (current.nodeId().equals(destId)) break;
 
-            for (Link link : network.neighborsOf(current)) {
-                Node next = link.other(network.getNode(current));
-                if (!next.isActive()) continue;
-                double newDist = dist.get(current) + link.getDistance();
-                if (newDist < dist.getOrDefault(next.getId(), Double.POSITIVE_INFINITY)) {
-                    dist.put(next.getId(), newDist);
-                    parent.put(next.getId(), current);
-                    frontier.add(new double[]{next.getId(), newDist});
+            for (Link link : network.neighborsOf(current.nodeId())) {
+                String neighborId = link.a().id().equals(current.nodeId())
+                        ? link.b().id() : link.a().id();
+                double edgeWeight = linkWeight(link);
+                double candidateCost = current.cost() + edgeWeight;
+                if (candidateCost < best.getOrDefault(neighborId, Double.MAX_VALUE)) {
+                    best.put(neighborId, candidateCost);
+                    cameFrom.put(neighborId, current.nodeId());
+                    frontier.add(new Candidate(neighborId, candidateCost));
                 }
             }
         }
 
-        if (dist.getOrDefault(destId, Double.POSITIVE_INFINITY) == Double.POSITIVE_INFINITY) {
-            return Route.notFound();
+        if (!cameFrom.containsKey(destId) && !sourceId.equals(destId)) {
+            return List.of();
         }
+        return reconstruct(cameFrom, sourceId, destId);
+    }
 
-        LinkedList<Node> path = new LinkedList<>();
-        Integer cur = destId;
-        while (cur != null) {
-            path.addFirst(network.getNode(cur));
-            if (cur == sourceId) break;
-            cur = parent.get(cur);
+    /** Hook so EnergyAwareDijkstraRouter can change only the weight function. */
+    protected double linkWeight(Link link) {
+        return link.weight();
+    }
+
+    private List<String> reconstruct(Map<String, String> cameFrom, String source, String dest) {
+        List<String> path = new ArrayList<>();
+        String step = dest;
+        path.add(step);
+        while (!step.equals(source)) {
+            step = cameFrom.get(step);
+            if (step == null) return List.of();
+            path.add(step);
         }
-        return Route.of(path, dist.get(destId));
+        Collections.reverse(path);
+        return path;
+    }
+
+    @Override
+    public String protocolName() {
+        return "Dijkstra";
     }
 }

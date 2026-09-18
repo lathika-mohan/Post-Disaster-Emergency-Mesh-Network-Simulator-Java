@@ -1,56 +1,62 @@
 package com.meshsim.routing;
 
-import com.meshsim.model.Node;
 import com.meshsim.network.Link;
 import com.meshsim.network.MeshNetwork;
 
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
-/** Breadth-First Search router: O(V+E), returns the minimum hop-count path. */
-public class BFSRouter implements Router {
+/** Minimum hop-count routing — ignores link quality entirely. */
+public final class BFSRouter extends AbstractRouter {
 
-    @Override
-    public String name() { return "BFS (min hop-count)"; }
-
-    @Override
-    public Route findRoute(MeshNetwork network, int sourceId, int destId) {
-        Node source = network.getNode(sourceId);
-        Node dest = network.getNode(destId);
-        if (source == null || dest == null || !source.isActive() || !dest.isActive()) {
-            return Route.notFound();
-        }
-
-        Map<Integer, Integer> parent = new HashMap<>();
-        Set<Integer> visited = new HashSet<>();
-        Queue<Integer> queue = new LinkedList<>();
-        queue.add(sourceId);
-        visited.add(sourceId);
-
-        while (!queue.isEmpty()) {
-            int current = queue.poll();
-            if (current == destId) {
-                return Route.of(reconstruct(network, parent, sourceId, destId),
-                        reconstruct(network, parent, sourceId, destId).size() - 1);
-            }
-            for (Link link : network.neighborsOf(current)) {
-                Node next = link.other(network.getNode(current));
-                if (!next.isActive() || visited.contains(next.getId())) continue;
-                visited.add(next.getId());
-                parent.put(next.getId(), current);
-                queue.add(next.getId());
-            }
-        }
-        return Route.notFound();
+    public BFSRouter(MeshNetwork net) {
+        super(net);
     }
 
-    private List<Node> reconstruct(MeshNetwork network, Map<Integer, Integer> parent, int sourceId, int destId) {
-        LinkedList<Node> path = new LinkedList<>();
-        Integer cur = destId;
-        while (cur != null) {
-            path.addFirst(network.getNode(cur));
-            if (cur == sourceId) break;
-            cur = parent.get(cur);
+    @Override
+    protected List<String> search(String sourceId, String destId) {
+        Set<String> visited = new LinkedHashSet<>();
+        Map<String, String> cameFrom = new LinkedHashMap<>();
+        Deque<String> frontier = new ArrayDeque<>();
+        frontier.add(sourceId);
+        visited.add(sourceId);
+
+        while (!frontier.isEmpty()) {
+            String current = frontier.poll();
+            if (current.equals(destId)) {
+                return reconstruct(cameFrom, sourceId, destId);
+            }
+            for (Link link : network.neighborsOf(current)) {
+                String neighborId = link.a().id().equals(current) ? link.b().id() : link.a().id();
+                if (visited.add(neighborId)) {
+                    cameFrom.put(neighborId, current);
+                    frontier.add(neighborId);
+                }
+            }
         }
+        return List.of();
+    }
+
+    private List<String> reconstruct(Map<String, String> cameFrom, String source, String dest) {
+        List<String> path = new ArrayList<>();
+        String step = dest;
+        path.add(step);
+        while (!step.equals(source)) {
+            step = cameFrom.get(step);
+            path.add(step);
+        }
+        java.util.Collections.reverse(path);
         return path;
+    }
+
+    @Override
+    public String protocolName() {
+        return "BFS";
     }
 }

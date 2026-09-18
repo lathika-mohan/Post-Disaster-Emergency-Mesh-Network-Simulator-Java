@@ -1,9 +1,10 @@
 package com.meshsim.routing;
 
-import com.meshsim.network.MeshNetwork;
+import com.meshsim.exception.NodeUnreachableException;
 
-/** Strategy interface implemented by each routing protocol (BFS, Dijkstra, ...). */
+/** The stable public contract every routing protocol implements. */
 public interface Router {
-    Route findRoute(MeshNetwork network, int sourceId, int destId);
-    String name();
+    Route findRoute(String sourceId, String destId) throws NodeUnreachableException;
+
+    String protocolName();
 }

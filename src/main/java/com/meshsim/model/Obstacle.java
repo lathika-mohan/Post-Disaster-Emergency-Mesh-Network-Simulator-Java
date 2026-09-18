@@ -1,57 +1,52 @@
 package com.meshsim.model;
 
 /**
- * A circular obstacle region in the disaster zone (flood, fire, rubble, collapse).
- * A link between two nodes is invalidated if the straight line between them
- * intersects the obstacle's circle.
+ * Sealed hierarchy of disaster obstacles. Sealing forces every switch over
+ * Obstacle to handle every permitted subtype at compile time (Unit 2 / Unit 5
+ * "Features of Java 21": sealed classes, pattern matching for switch).
  */
-public class Obstacle {
+public sealed interface Obstacle
+        permits FloodZone, FireRegion, RubbleField, CollapsedBuilding {
 
-    public enum Type { FLOOD_ZONE, FIRE_REGION, RUBBLE_FIELD, BUILDING_COLLAPSE }
+    Point centre();
 
-    private final Type type;
-    private final double x, y, radius;
+    /** Does the straight line a-b pass through this obstacle? */
+    boolean blocks(Point a, Point b);
 
-    public Obstacle(Type type, double x, double y, double radius) {
-        this.type = type;
-        this.x = x;
-        this.y = y;
-        this.radius = radius;
-    }
-
-    public Type getType() { return type; }
-    public double getX() { return x; }
-    public double getY() { return y; }
-    public double getRadius() { return radius; }
-
-    /** Path-loss exponent multiplier associated with this obstacle's environment. */
-    public double pathLossExponent() {
-        switch (type) {
-            case FLOOD_ZONE: return 3.5;
-            case FIRE_REGION: return 4.0;
-            case RUBBLE_FIELD: return 4.5;
-            case BUILDING_COLLAPSE: return 5.5;
-            default: return 2.0;
-        }
-    }
+    /** Multiplicative signal attenuation factor in [0, 1]; 0 = fully blocks. */
+    double attenuationFactor();
 
     /**
-     * Returns true if the segment (x1,y1)-(x2,y2) intersects this circular obstacle,
-     * using the standard point-to-segment distance test.
+     * Human-readable description using pattern matching for switch with
+     * record patterns (Unit 2 / Unit 5, Java 21).
      */
-    public boolean blocksSegment(double x1, double y1, double x2, double y2) {
-        double dx = x2 - x1, dy = y2 - y1;
-        double lenSq = dx * dx + dy * dy;
-        double t = lenSq == 0 ? 0 : ((x - x1) * dx + (y - y1) * dy) / lenSq;
-        t = Math.max(0, Math.min(1, t));
-        double closestX = x1 + t * dx;
-        double closestY = y1 + t * dy;
-        double distSq = (closestX - x) * (closestX - x) + (closestY - y) * (closestY - y);
-        return distSq <= radius * radius;
+    static String describe(Obstacle o) {
+        return switch (o) {
+            case FloodZone(Point c, double r, double depth) when depth > 2.0 ->
+                    "Deep flood (depth %.1fm) radius %.1f at %s".formatted(depth, r, c);
+            case FloodZone f ->
+                    "Shallow flood, radius %.1f at %s".formatted(f.radius(), f.centre());
+            case FireRegion f ->
+                    "Fire front, spread rate %.2f at %s".formatted(f.spreadRate(), f.centre());
+            case RubbleField r ->
+                    "Rubble field, density %.2f at %s".formatted(r.density(), r.centre());
+            case CollapsedBuilding b ->
+                    "Collapsed building, %d floors at %s".formatted(b.floors(), b.centre());
+            // no default needed - the interface is sealed and every case is covered
+        };
     }
 
-    @Override
-    public String toString() {
-        return String.format("%s at (%.0f,%.0f) r=%.0f", type, x, y, radius);
+    /** Simple circle-based line-of-sight blocking test shared by circular obstacles. */
+    static boolean segmentIntersectsCircle(Point a, Point b, Point centre, double radius) {
+        double dx = b.x() - a.x();
+        double dy = b.y() - a.y();
+        double lenSq = dx * dx + dy * dy;
+        if (lenSq == 0) {
+            return a.distanceTo(centre) <= radius;
+        }
+        double t = ((centre.x() - a.x()) * dx + (centre.y() - a.y()) * dy) / lenSq;
+        t = Math.max(0, Math.min(1, t));
+        Point closest = new Point(a.x() + t * dx, a.y() + t * dy);
+        return closest.distanceTo(centre) <= radius;
     }
 }

@@ -1,26 +1,35 @@
 package com.meshsim.energy;
 
+import com.meshsim.model.Node;
+
 /**
- * Simplified radio energy model (inspired by the classic first-order model
- * used in wireless sensor network research).
- *
- * E_tx(k,d) = k * E_elec + k * E_amp * d^n     (transmit k bits over distance d)
- * E_rx(k)   = k * E_elec                        (receive k bits)
+ * First-order radio energy model. drain() is called from multiple node
+ * threads concurrently (Phase 6); this is a small, low-contention critical
+ * section, so plain `synchronized` is used here deliberately, in contrast to
+ * the ReentrantReadWriteLock guarding the much hotter, coarser-grained graph
+ * in MeshNetwork. Different contention shapes, different tools.
  */
-public class EnergyModel {
-    private static final double E_ELEC = 50e-9;   // Joules per bit, electronics cost
-    private static final double E_AMP = 100e-12;   // Joules per bit per distance^n, amplifier cost
-    private static final int PACKET_BITS = 2048;   // default emergency-message packet size
+public final class EnergyModel {
 
-    /** Transmission energy for one packet over the given distance, at path-loss exponent n. */
-    public double transmitEnergy(double distance, double pathLossExponent) {
-        return PACKET_BITS * E_ELEC + PACKET_BITS * E_AMP * Math.pow(Math.max(distance, 1), pathLossExponent);
+    public static final double TRANSMIT_COST_BASE = 0.01;
+    public static final double RECEIVE_COST = 0.004;
+    public static final double IDLE_DRAIN = 0.0005;
+    public static final double SLEEP_DRAIN = 0.00005;
+
+    public synchronized void drain(Node n, double distanceMetres) {
+        double distanceFactor = Math.pow(Math.max(1.0, distanceMetres), 2) / 100.0;
+        n.drain(TRANSMIT_COST_BASE * distanceFactor);
     }
 
-    /** Reception energy for one packet (distance-independent). */
-    public double receiveEnergy() {
-        return PACKET_BITS * E_ELEC;
+    public synchronized void onReceive(Node n) {
+        n.drain(RECEIVE_COST);
     }
 
-    public int packetBits() { return PACKET_BITS; }
+    public synchronized void onIdleTick(Node n) {
+        n.drain(IDLE_DRAIN);
+    }
+
+    public synchronized void onSleepTick(Node n) {
+        n.drain(SLEEP_DRAIN);
+    }
 }

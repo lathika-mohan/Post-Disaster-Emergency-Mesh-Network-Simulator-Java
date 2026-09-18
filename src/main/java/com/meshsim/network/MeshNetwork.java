@@ -1,130 +1,115 @@
 package com.meshsim.network;
 
-import com.meshsim.model.Environment;
+import com.meshsim.exception.NetworkPartitionedException;
 import com.meshsim.model.Node;
+import com.meshsim.model.Scenario;
 
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * Builds and maintains the mesh graph G = (V, E).
- * Two nodes are connected when d(A,B) <= min(rangeA, rangeB) AND no obstacle
- * blocks the straight line between them (obstacle-aware link validity).
+ * The live topology graph, rebuilt whenever nodes move. Readers (routers) and
+ * the one writer (mobility engine, Phase 6) contend for this, so it is guarded
+ * with a ReentrantReadWriteLock rather than a single coarse `synchronized` —
+ * many routers can read concurrently, only the rebuild needs exclusivity.
  */
 public class MeshNetwork {
-    private final Environment environment;
-    private final Map<Integer, Node> nodes = new LinkedHashMap<>();
-    private final Map<Integer, List<Link>> adjacency = new HashMap<>();
 
-    public MeshNetwork(Environment environment) {
-        this.environment = environment;
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    private final Map<String, List<Link>> adjacency = new HashMap<>();
+    private Scenario scenario;
+
+    public MeshNetwork(Scenario scenario) {
+        this.scenario = scenario;
+        rebuild();
     }
 
-    public Environment getEnvironment() { return environment; }
-
-    public void addNode(Node node) {
-        nodes.put(node.getId(), node);
-        adjacency.put(node.getId(), new ArrayList<>());
-        rebuildLinksFor(node);
+    public Scenario scenario() {
+        return scenario;
     }
 
-    public void removeNode(int id) {
-        nodes.remove(id);
-        adjacency.remove(id);
-        for (List<Link> links : adjacency.values()) {
-            links.removeIf(l -> l.getA().getId() == id || l.getB().getId() == id);
-        }
-    }
-
-    public Collection<Node> getNodes() { return nodes.values(); }
-    public Node getNode(int id) { return nodes.get(id); }
-
-    public static double distance(Node a, Node b) {
-        double dx = a.getX() - b.getX();
-        double dy = a.getY() - b.getY();
-        return Math.sqrt(dx * dx + dy * dy);
-    }
-
-    /** Recomputes the full adjacency graph from scratch (call after node failures / moves). */
-    public void rebuildAllLinks() {
-        for (List<Link> l : adjacency.values()) l.clear();
-        List<Node> active = new ArrayList<>();
-        for (Node n : nodes.values()) if (n.isActive()) active.add(n);
-        for (int i = 0; i < active.size(); i++) {
-            for (int j = i + 1; j < active.size(); j++) {
-                tryLink(active.get(i), active.get(j));
+    /** Recomputes every pairwise link from current node positions and obstacles. */
+    public void rebuild() {
+        lock.writeLock().lock();
+        try {
+            adjacency.clear();
+            List<Node> nodeList = new ArrayList<>();
+            for (Node n : scenario.nodes()) {
+                if (n.isAlive()) nodeList.add(n);
+                adjacency.put(n.id(), new ArrayList<>());
             }
-        }
-    }
-
-    private void rebuildLinksFor(Node node) {
-        if (!node.isActive()) return;
-        for (Node other : nodes.values()) {
-            if (other.getId() == node.getId() || !other.isActive()) continue;
-            tryLink(node, other);
-        }
-    }
-
-    private void tryLink(Node a, Node b) {
-        double d = distance(a, b);
-        boolean inRange = d <= Math.min(a.getRange(), b.getRange());
-        boolean blocked = environment.isLinkBlocked(a.getX(), a.getY(), b.getX(), b.getY());
-        if (inRange && !blocked) {
-            Link link = new Link(a, b, d);
-            adjacency.get(a.getId()).add(link);
-            adjacency.get(b.getId()).add(new Link(b, a, d));
-        }
-    }
-
-    public List<Link> neighborsOf(int nodeId) {
-        return adjacency.getOrDefault(nodeId, Collections.emptyList());
-    }
-
-    /** Total number of undirected edges currently in the graph. */
-    public int edgeCount() {
-        int total = 0;
-        for (List<Link> l : adjacency.values()) total += l.size();
-        return total / 2;
-    }
-
-    /** Number of nodes still transmitting (energy > 0 and not manually downed). */
-    public long activeNodeCount() {
-        return nodes.values().stream().filter(Node::isActive).count();
-    }
-
-    public int totalNodeCount() { return nodes.size(); }
-
-    /** Number of connected components among currently active nodes (1 = fully connected mesh). */
-    public int connectedComponents() {
-        Set<Integer> visited = new HashSet<>();
-        int components = 0;
-        for (Node n : nodes.values()) {
-            if (!n.isActive() || visited.contains(n.getId())) continue;
-            components++;
-            Deque<Integer> stack = new ArrayDeque<>();
-            stack.push(n.getId());
-            visited.add(n.getId());
-            while (!stack.isEmpty()) {
-                int current = stack.pop();
-                for (Link link : neighborsOf(current)) {
-                    Node next = link.other(getNode(current));
-                    if (next.isActive() && visited.add(next.getId())) {
-                        stack.push(next.getId());
+            for (int i = 0; i < nodeList.size(); i++) {
+                for (int j = i + 1; j < nodeList.size(); j++) {
+                    Node a = nodeList.get(i);
+                    Node b = nodeList.get(j);
+                    double quality = PathLossModel.computeQuality(a, b, scenario);
+                    if (quality > 0.0) {
+                        Link link = new Link(a, b, quality);
+                        adjacency.get(a.id()).add(link);
+                        adjacency.get(b.id()).add(link);
                     }
                 }
             }
+        } finally {
+            lock.writeLock().unlock();
         }
-        return components;
     }
 
-    /** Average node degree = 2E / V, over active nodes. */
-    public double averageDegree() {
-        long v = activeNodeCount();
-        return v == 0 ? 0 : (2.0 * edgeCount()) / v;
+    public List<Link> neighborsOf(String nodeId) {
+        lock.readLock().lock();
+        try {
+            return List.copyOf(adjacency.getOrDefault(nodeId, List.of()));
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
-    /** Graph density = 2E / (V * (V-1)), over active nodes. */
-    public double density() {
-        long v = activeNodeCount();
-        return v <= 1 ? 0 : (2.0 * edgeCount()) / (v * (v - 1));
+    /**
+     * BFS connected-components check between src and dst. Throws
+     * NetworkPartitionedException with both component sizes if they are
+     * not reachable from one another at all.
+     */
+    public void assertConnected(String srcId, String dstId) throws NetworkPartitionedException {
+        lock.readLock().lock();
+        try {
+            Set<String> componentOfSrc = reachableFrom(srcId);
+            if (componentOfSrc.contains(dstId)) {
+                return;
+            }
+            Set<String> componentOfDst = reachableFrom(dstId);
+            throw new NetworkPartitionedException(componentOfSrc.size(), componentOfDst.size());
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    private Set<String> reachableFrom(String start) {
+        Set<String> visited = new LinkedHashSet<>();
+        Deque<String> frontier = new ArrayDeque<>();
+        frontier.add(start);
+        visited.add(start);
+        while (!frontier.isEmpty()) {
+            String current = frontier.poll();
+            for (Link link : adjacency.getOrDefault(current, List.of())) {
+                String neighborId = link.other(findNode(current)).id();
+                if (visited.add(neighborId)) {
+                    frontier.add(neighborId);
+                }
+            }
+        }
+        return visited;
+    }
+
+    private Node findNode(String id) {
+        return scenario.nodes().find(id)
+                .orElseThrow(() -> new IllegalStateException("Unknown node id in graph: " + id));
     }
 }
