@@ -16,15 +16,23 @@ public final class SimulationClock extends Thread {
     private final AtomicBoolean paused = new AtomicBoolean(false);
     private final Object pauseLock = new Object();
 
-    public SimulationClock(EventBus eventBus, long tickIntervalMs) {
-        super("simulation-clock");
+    public SimulationClock(ThreadGroup group, EventBus eventBus, long tickIntervalMs) {
+        super(group, "simulation-clock");
         this.eventBus = eventBus;
         this.tickIntervalMs = tickIntervalMs;
         setDaemon(false);
     }
 
+    public SimulationClock(EventBus eventBus, long tickIntervalMs) {
+        this(null, eventBus, tickIntervalMs);
+    }
+
     public long currentTick() {
         return tick.get();
+    }
+
+    public boolean isPaused() {
+        return paused.get();
     }
 
     public void pauseClock() {

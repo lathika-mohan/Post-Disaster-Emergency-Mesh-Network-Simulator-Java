@@ -1,4 +1,4 @@
-﻿src/main/java/com/meshsim/Main.java
+src/main/java/com/meshsim/Main.java
 src/main/java/com/meshsim/cli/ConsoleMenu.java
 src/main/java/com/meshsim/concurrent/BatteryDrainer.java
 src/main/java/com/meshsim/concurrent/EventBus.java
@@ -27,6 +27,7 @@ src/main/java/com/meshsim/io/ReportWriter.java
 src/main/java/com/meshsim/io/SimulationLogger.java
 src/main/java/com/meshsim/io/StateSerializer.java
 src/main/java/com/meshsim/model/CollapsedBuilding.java
+src/main/java/com/meshsim/model/DemoScenarios.java
 src/main/java/com/meshsim/model/FireRegion.java
 src/main/java/com/meshsim/model/FloodZone.java
 src/main/java/com/meshsim/model/Message.java
@@ -40,7 +41,9 @@ src/main/java/com/meshsim/model/RubbleField.java
 src/main/java/com/meshsim/model/Scenario.java
 src/main/java/com/meshsim/network/Link.java
 src/main/java/com/meshsim/network/MeshNetwork.java
+src/main/java/com/meshsim/network/NetworkPartitionDetector.java
 src/main/java/com/meshsim/network/PathLossModel.java
+src/main/java/com/meshsim/network/RelayPlacementAdvisor.java
 src/main/java/com/meshsim/persistence/ConnectionFactory.java
 src/main/java/com/meshsim/persistence/JdbcScenarioDao.java
 src/main/java/com/meshsim/persistence/JdbcSimRunDao.java
@@ -56,6 +59,7 @@ src/main/java/com/meshsim/routing/EpidemicRouter.java
 src/main/java/com/meshsim/routing/MobileRouter.java
 src/main/java/com/meshsim/routing/Route.java
 src/main/java/com/meshsim/routing/Router.java
+src/main/java/com/meshsim/simulation/BatchRunner.java
 src/main/java/com/meshsim/util/BatteryLeaderboard.java
 src/main/java/com/meshsim/util/Identifiable.java
 src/main/java/com/meshsim/util/MetricsAggregator.java

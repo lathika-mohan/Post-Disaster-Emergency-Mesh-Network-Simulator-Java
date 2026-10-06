@@ -25,4 +25,11 @@ public final class BatteryLeaderboard {
     public SortedSet<Node> weakestFirst() {
         return byEnergyAscending;
     }
+
+    public static java.util.List<Node> weakest(Iterable<Node> nodes, int k) {
+        java.util.List<Node> list = new java.util.ArrayList<>();
+        for (Node n : nodes) list.add(n);
+        list.sort(Comparator.comparingDouble(Node::energy));
+        return list.subList(0, Math.min(k, list.size()));
+    }
 }

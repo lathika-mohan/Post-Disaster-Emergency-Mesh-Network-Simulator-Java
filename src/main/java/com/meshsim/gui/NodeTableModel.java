@@ -19,6 +19,10 @@ public final class NodeTableModel extends AbstractTableModel {
         fireTableDataChanged();
     }
 
+    public void refresh() {
+        fireTableDataChanged();
+    }
+
     @Override
     public int getRowCount() {
         return rows.size();

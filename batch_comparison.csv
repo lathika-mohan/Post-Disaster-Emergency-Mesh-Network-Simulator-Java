@@ -1,0 +1,7 @@
+Protocol,Scenario,Runs,PDR (%),Avg Hops,Energy/Msg (J),Lifetime Ticks
+BFS,sample-scenario,5,6.7%,1.00,0.100,103
+Dijkstra,sample-scenario,5,6.7%,1.00,0.100,103
+EnergyAwareDijkstra,sample-scenario,5,6.7%,1.00,0.100,103
+AODV,sample-scenario,5,6.7%,1.00,0.100,103
+DSR,sample-scenario,5,6.7%,1.00,0.100,103
+Epidemic,sample-scenario,5,100.0%,0.07,0.100,150

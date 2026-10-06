@@ -42,6 +42,14 @@ public class Repository<T extends Identifiable> implements Iterable<T> {
         return items.isEmpty();
     }
 
+    public void clear() {
+        items.clear();
+    }
+
+    public java.util.stream.Stream<T> stream() {
+        return items.values().stream();
+    }
+
     @Override
     public Iterator<T> iterator() {
         return items.values().iterator();

@@ -24,14 +24,19 @@ public final class MobilityEngine extends Thread {
     private final Random random = new Random();
     private final Map<String, Point> waypoints = new HashMap<>();
 
-    public MobilityEngine(Scenario scenario, MeshNetwork network,
+    public MobilityEngine(ThreadGroup group, Scenario scenario, MeshNetwork network,
                            MobileRouter mobileRouter, long tickIntervalMs) {
-        super("mobility-engine");
+        super(group, "mobility-engine");
         this.scenario = scenario;
         this.network = network;
         this.mobileRouter = mobileRouter;
         this.tickIntervalMs = tickIntervalMs;
         setDaemon(false);
+    }
+
+    public MobilityEngine(Scenario scenario, MeshNetwork network,
+                           MobileRouter mobileRouter, long tickIntervalMs) {
+        this(null, scenario, network, mobileRouter, tickIntervalMs);
     }
 
     @Override

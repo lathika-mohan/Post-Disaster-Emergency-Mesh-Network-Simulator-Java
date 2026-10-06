@@ -11,12 +11,16 @@ public final class BatteryDrainer extends Thread {
     private final EnergyModel energyModel;
     private final long tickIntervalMs;
 
-    public BatteryDrainer(Scenario scenario, EnergyModel energyModel, long tickIntervalMs) {
-        super("battery-drainer");
+    public BatteryDrainer(ThreadGroup group, Scenario scenario, EnergyModel energyModel, long tickIntervalMs) {
+        super(group, "battery-drainer");
         this.scenario = scenario;
         this.energyModel = energyModel;
         this.tickIntervalMs = tickIntervalMs;
         setDaemon(true);
+    }
+
+    public BatteryDrainer(Scenario scenario, EnergyModel energyModel, long tickIntervalMs) {
+        this(null, scenario, energyModel, tickIntervalMs);
     }
 
     @Override

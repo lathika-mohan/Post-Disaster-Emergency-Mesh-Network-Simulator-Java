@@ -37,6 +37,18 @@ public final class Simulator {
         this.network = network;
     }
 
+    public Scenario scenario() {
+        return scenario;
+    }
+
+    public MeshNetwork network() {
+        return network;
+    }
+
+    public SimulationClock clock() {
+        return clock;
+    }
+
     public EventBus eventBus() {
         return eventBus;
     }
@@ -44,12 +56,10 @@ public final class Simulator {
     public void start() {
         EpidemicRouter epidemicRouter = new EpidemicRouter(network);
 
-        clock = new SimulationClock(eventBus, 200);
-        mobilityEngine = new MobilityEngine(scenario, network, epidemicRouter, 200);
-        batteryDrainer = new BatteryDrainer(scenario, energyModel, 500);
+        clock = new SimulationClock(coreGroup, eventBus, 200);
+        mobilityEngine = new MobilityEngine(coreGroup, scenario, network, epidemicRouter, 200);
+        batteryDrainer = new BatteryDrainer(coreGroup, scenario, energyModel, 500);
 
-        // Reparent the two extends-Thread instances under the shared group.
-        // (SimulationClock/MobilityEngine/BatteryDrainer all descend from Thread.)
         clock.start();
         mobilityEngine.start();
         batteryDrainer.start();
@@ -61,17 +71,49 @@ public final class Simulator {
             PacketQueue inbox = new PacketQueue();
             inboxes.put(node.id(), inbox);
             NodeWorker worker = new NodeWorker(node, inbox, energyModel, eventBus);
-            // One virtual thread per node - hundreds of blocked nodes cost almost
-            // nothing, where the same number of platform threads would not.
             nodeThreads[i++] = Thread.ofVirtual().name("node-" + node.id()).start(worker);
         }
     }
 
-    /** Cooperative shutdown: interrupt everything, join with a timeout, never Thread.stop(). */
+    public void pause() {
+        if (clock != null) clock.pauseClock();
+    }
+
+    public void resume() {
+        if (clock != null) clock.resumeClock();
+    }
+
+    public boolean isPaused() {
+        return clock != null && clock.isPaused();
+    }
+
+    public Route sendMessage(String srcId, String dstId, Router router)
+            throws NodeUnreachableException, com.meshsim.exception.NetworkPartitionedException {
+        Route route = router.findRoute(srcId, dstId);
+        eventBus.publish(new SimulationEvent<>("ROUTE", route.hops(), 0));
+
+        Thread.ofVirtual().name("send-msg-" + srcId + "-" + dstId).start(() -> {
+            try {
+                com.meshsim.model.Message message =
+                        new com.meshsim.model.Message(srcId, dstId, com.meshsim.model.Priority.MEDICAL_EMERGENCY, "ALERT", 20);
+                for (String hopId : route.hops()) {
+                    PacketQueue inbox = inboxes.get(hopId);
+                    if (inbox != null) {
+                        message.hop();
+                        inbox.put(message);
+                    }
+                    Thread.sleep(150);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        return route;
+    }
+
+    /** Cooperative shutdown: interrupt coreGroup, join with a timeout, never Thread.stop(). */
     public void stop() throws InterruptedException {
-        if (clock != null) clock.interrupt();
-        if (mobilityEngine != null) mobilityEngine.interrupt();
-        if (batteryDrainer != null) batteryDrainer.interrupt();
+        coreGroup.interrupt();
         if (nodeThreads != null) {
             for (Thread t : nodeThreads) t.interrupt();
         }

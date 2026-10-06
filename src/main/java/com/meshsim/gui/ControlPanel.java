@@ -41,4 +41,8 @@ public final class ControlPanel extends JPanel {
     public String selectedProtocol() {
         return (String) protocolBox.getSelectedItem();
     }
+
+    public void setPauseButtonText(String text) {
+        pauseButton.setText(text);
+    }
 }

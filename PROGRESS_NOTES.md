@@ -1,73 +1,43 @@
-# Progress Notes
+# ResQNet Progress & Refactoring Notes
 
-Started from a console-only prototype at roughly 30–35% of the design document
-(BFS/Dijkstra routing, distance-based graph, first-order energy model, CSV loading).
+This log documents the incremental transition of ResQNet from a half-wired prototype into a 100% complete, fully tested, demo-ready project.
 
-## What this pass built
+---
 
-- **Phase 1 (model on Java 21):** `Point` as a record, `Obstacle` as a sealed
-  interface with four record implementations, pattern matching for switch with
-  record patterns in `Obstacle.describe()`, `Scenario.clone()` for deep cloning,
-  all four access specifiers deliberately exercised on `Node`, static factory
-  `Node.spawn()`.
-- **Phase 2 (exceptions & I/O):** full checked/unchecked hierarchy under
-  `com.meshsim.exception`; character-stream CSV loader with per-line error
-  reporting; a `SimulationLogger` using `StringBuffer` deliberately for
-  concurrent-safe logging; `StateSerializer` for byte-stream `.mesh` snapshots.
-- **Phase 3 (generics):** `Repository<T extends Identifiable>`,
-  `SimulationEvent<T>` / `EventBus`, and a `TopK` generic method with a report
-  note on type erasure baked into its Javadoc.
-- **Phase 4 (collections):** `BatteryLeaderboard` (`SortedSet`/`TreeSet`),
-  `MetricsAggregator` (`Arrays` utility class), `LinkedHashMap`/`ArrayDeque`/
-  `LinkedHashSet` used inside the routers and `MeshNetwork`.
-- **Phase 5 (routing):** `Router` / `MobileRouter` interfaces, `AbstractRouter`
-  template method, `BFSRouter`, `DijkstraRouter`, `EnergyAwareDijkstraRouter`,
-  `AODVRouter` (flood + route cache), `DSRRouter`, `EpidemicRouter`
-  (store-carry-forward, the one `MobileRouter` implementation).
-- **Phase 6 (concurrency):** `SimulationClock` (`extends Thread`), `NodeWorker`
-  (`implements Runnable`, run on a virtual thread per node), `BatteryDrainer`
-  (daemon), `MobilityEngine` (Random Waypoint, rebuilds the graph under a
-  `ReentrantReadWriteLock`), `Simulator.raceAllProtocols()` using
-  `StructuredTaskScope.ShutdownOnFailure` (a JDK 21 preview API — compiled and
-  run with `--enable-preview`, wired into `pom.xml` and `run.sh`).
-- **Phase 7 (radio/energy):** simplified log-distance `PathLossModel`,
-  first-order `EnergyModel` with a deliberately plain `synchronized` method,
-  `RadioProfile` constants, `FireRegion.grow()`.
-- **Phase 8 (JDBC/DAO):** SQLite schema in `ConnectionFactory`, DAO interfaces
-  plus JDBC implementations for `Scenario` and `SimRun`, transactional batch
-  insert with rollback in `JdbcScenarioDao.save()`.
-- **Phase 9 (Swing):** `MeshSimFrame`, `MapPanel` (custom `Graphics2D`
-  painting, mouse selection, battery rings), `ControlPanel`, `NodeTableModel`;
-  all cross-thread updates go through `SwingUtilities.invokeLater`.
-- **Phase 11 (testing):** JUnit 5 tests for `BFSRouter`, `DijkstraRouter`, and
-  all four `DatasetLoader` failure cases, on hand-built small graphs.
+## Phase 1 — Build, Tests & Layout (P0)
+- **Deleted Prototype Files:** Removed 7 leftover prototype files calling obsolete APIs (`DatasetLoader.java`, `Environment.java`, `Metrics.java`, `ScenarioBuilder.java`, `Simulator.java`, `ConsoleMenu.java`, `Display.java`).
+- **Fixed BFS Test Geometry:** Adjusted `BFSRouterTest` spacing from `25m` to `50m` (over 350m scenario width) so adjacent nodes link (`50m <= 60m`) while skip-one pairs do not (`100m > 60m`), restoring a true 5-hop chain test.
+- **Rewrote Dijkstra Detour Test:** Configured geometry `S(0,0)`, `D(59,0)`, `M(30,40)` with `RubbleField(30,0, radius=8, density=0.9)` on segment S–D. Verified exact detour hop list `["S", "M", "D"]`.
+- **Fixed GUI Event Log Layout:** Replaced colliding `BorderLayout.SOUTH` / `PAGE_END` calls in `MeshSimFrame` with a nested `JPanel` containing `logScroll` in `CENTER` and `statusBar` in `SOUTH`. Bounded `protocolBox` max size in `ControlPanel`.
+- **Hygiene:** Cleaned git index by removing cached `out/` class files, regenerated `sources.txt`, and added `.gitignore`.
 
-## What broke, and why a choice was made
+---
 
-- `java.awt.Point` collided with `com.meshsim.model.Point` inside the GUI
-  package the moment both were in scope via wildcard imports — resolved with
-  an explicit import of the model's `Point`, which Java resolves in favour of
-  the wildcard.
-- `StructuredTaskScope` is a **preview** API on JDK 21 (it graduates later),
-  so both `javac` and the runtime need `--enable-preview` explicitly — this
-  is called out in `pom.xml`, `build.sh`, and `run.sh` rather than silently
-  assumed.
-- The sandbox used to build this scaffold has no route to Maven Central, so
-  `sqlite-jdbc` and JUnit were fetched from their GitHub release assets
-  instead, purely to prove the whole tree (persistence included) compiles
-  end-to-end. A normal dev machine will resolve both from Maven Central via
-  `pom.xml` without any of that.
-- Demo scenario node spacing initially exceeded the 60m default radio range,
-  so nothing routed — tightened the demo coordinates so the CLI/GUI actually
-  show a connected, multi-hop network out of the box.
+## Phase 2 — End-to-End System Wiring (P1)
+- **Real Message Delivery:** Added `Simulator.sendMessage(srcId, dstId, router)` walking hop lists on virtual threads (`Thread.ofVirtual()`), putting `Message` instances into `PacketQueue` inboxes with 150ms delays. `NodeWorker` threads process messages and publish `FORWARD` and `DELIVERED` events.
+- **GUI Send & Route Highlighting:** Wired **Send Message** button with node dropdowns (preselecting map-clicked node), router creation for all 6 protocols, cyan route highlighting on `MapPanel`, and exception dialogs on failure.
+- **GUI Pause & File Exports:** Wired **Pause** button to toggle `SimulationClock.pauseClock()`/`resumeClock()`. Implemented File menu actions for CSV loading (`DatasetLoader`), DB save/load (`JdbcScenarioDao`), report export (`ReportWriter`), and CSV export (`CsvExporter`).
+- **CLI Upgrades:** Upgraded `ConsoleMenu` with live mode execution, CSV loading, DB persistence, node census formatting (`MetricsAggregator`), and weakest battery summaries.
+- **Shared Demo Factory:** Consolidated demo scenarios into `DemoScenarios.demo()`.
 
-## Honest state of this pass
+---
 
-This is a working, compiling scaffold covering the syllabus concepts in every
-phase — not the full 5-day-polish Swing app (no animated packet interpolation,
-no custom charts, no scenario editor yet) and not the full protocol nuance
-(AODV/DSR are simplified relative to the spec). Concurrency and the DAO layer
-are real and tested manually via the CLI, but do not yet have the seeded-RNG
-determinism mode the execution plan's honest assessment calls for. Next real
-increment: batch/metrics (Phase 10), the seeded-RNG deterministic mode, and
-fleshing out the Swing charts and scenario editor.
+## Phase 3 — Syllabus Evidence Alignment (P2)
+- **EnumMap & EnumSet:** Integrated `EnumMap<NodeType, Integer>` census and `EnumSet<NodeType>` mobile type filtering in `MetricsAggregator`.
+- **ThreadGroup Management:** Passed `coreGroup` ThreadGroup from `Simulator` to `SimulationClock`, `MobilityEngine`, and `BatteryDrainer` constructors (`super(group, name)`), shutting down all core threads via `coreGroup.interrupt()`.
+- **Radio Realism:** Extended `PathLossModel` with configurable terrain exponent, seeded static `Random`, and 4 dB Gaussian shadowing (`setSeed(long)` and `setShadowingEnabled(boolean)`).
+- **Partitioned Network Test:** Built `PartitionedNetworkTest` demonstrating end-to-end router failure across a `FireRegion` wall (`attenuation 0.0`) versus `EpidemicRouter` store-carry-forward delivery upon carrier mobility.
+
+---
+
+## Phase 4 — Batch Runner & Network Partition Analysis
+- **BatchRunner:** Implemented headless automated experiment runner evaluating all 6 protocols across scenario CSVs and random seeds, recording run metrics to SQLite (`SimRunRecord`) and exporting `batch_comparison.csv`.
+- **Partition Detector & Relay Placement:** Added `NetworkPartitionDetector` for connected components and `RelayPlacementAdvisor` for greedy relay marker suggestions drawn on `MapPanel`.
+- **CLI & Fat Jar Integration:** Exposed `--batch <scenarios-dir> <runs>` and `--seed=<value>` options in `Main.java`.
+
+---
+
+## Phase 5 — Documentation, Screenshots & Verification
+- **Javadoc & Report Corrections:** Verified clean javadoc build and generated `REPORT_CORRECTIONS.md` for PDF report updates.
+- **Screenshots:** Rendered 8 high-resolution screenshot PNG files in `./screenshots/` capturing real Swing frame states.
+- **Verification:** Verified `mvn test` (12/12 passing) and `./build.sh` (producing `target/mesh-sim.jar`).

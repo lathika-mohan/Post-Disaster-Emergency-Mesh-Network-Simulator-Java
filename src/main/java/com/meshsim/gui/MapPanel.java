@@ -22,16 +22,14 @@ import java.util.List;
 
 /**
  * Custom-painted canvas: obstacles -> links -> nodes, drawn every repaint.
- * A javax.swing.Timer at ~30fps drives repaint() from the EDT; the
- * simulation itself runs on separate threads (Phase 6) and never touches
- * Swing components directly - callers must marshal updates through
- * SwingUtilities.invokeLater (see MeshSimFrame).
  */
 public final class MapPanel extends JPanel {
 
     private final MeshNetwork network;
     private volatile Scenario snapshotScenario;
     private String selectedNodeId;
+    private List<String> highlightedRoute;
+    private Point relaySuggestion;
 
     public MapPanel(MeshNetwork network) {
         this.network = network;
@@ -48,7 +46,6 @@ public final class MapPanel extends JPanel {
         });
     }
 
-    /** Called only from the EDT (via invokeLater) to refresh what will be painted. */
     public void refresh() {
         repaint();
     }
@@ -59,6 +56,20 @@ public final class MapPanel extends JPanel {
             if (Math.hypot(p.x() - px, p.y() - py) < 10) return n.id();
         }
         return null;
+    }
+
+    public String selectedNodeId() {
+        return selectedNodeId;
+    }
+
+    public void setHighlightedRoute(List<String> route) {
+        this.highlightedRoute = route;
+        repaint();
+    }
+
+    public void setRelaySuggestion(Point p) {
+        this.relaySuggestion = p;
+        repaint();
     }
 
     @Override
@@ -77,10 +88,41 @@ public final class MapPanel extends JPanel {
                 }
             }
         }
+        if (highlightedRoute != null && highlightedRoute.size() > 1) {
+            drawHighlightedRoute(g2);
+        }
+        if (relaySuggestion != null) {
+            drawRelaySuggestion(g2);
+        }
         for (Node n : snapshotScenario.nodes()) {
             drawNode(g2, n);
         }
         g2.dispose();
+    }
+
+    private void drawHighlightedRoute(Graphics2D g2) {
+        g2.setStroke(new BasicStroke(4.0f));
+        g2.setColor(new Color(0, 220, 255, 220));
+        for (int i = 0; i < highlightedRoute.size() - 1; i++) {
+            Node n1 = snapshotScenario.nodes().find(highlightedRoute.get(i)).orElse(null);
+            Node n2 = snapshotScenario.nodes().find(highlightedRoute.get(i + 1)).orElse(null);
+            if (n1 != null && n2 != null) {
+                Point a = n1.position();
+                Point b = n2.position();
+                g2.draw(new Line2D.Double(a.x(), a.y(), b.x(), b.y()));
+            }
+        }
+    }
+
+    private void drawRelaySuggestion(Graphics2D g2) {
+        double r = 9;
+        Point p = relaySuggestion;
+        g2.setColor(new Color(255, 50, 200, 220));
+        g2.fill(new Ellipse2D.Double(p.x() - r, p.y() - r, r * 2, r * 2));
+        g2.setColor(Color.WHITE);
+        g2.setStroke(new BasicStroke(2.0f));
+        g2.draw(new Ellipse2D.Double(p.x() - r - 2, p.y() - r - 2, (r + 2) * 2, (r + 2) * 2));
+        g2.drawString("Suggested Relay", (float) (p.x() + r + 4), (float) (p.y() + 4));
     }
 
     private void drawObstacle(Graphics2D g2, Obstacle o) {

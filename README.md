@@ -1,103 +1,89 @@
-# Post-Disaster Emergency Mesh Network Simulator
+# Post-Disaster Emergency Mesh Network Simulator (ResQNet)
 
-CS5304 Java Programming · CO1–CO5
+CS5304 Java Programming · PBL Project
 
-A disaster-response mesh network simulator: nodes (survivors, rescue teams,
-relays, base stations) route messages across a field scattered with
-obstacles (floods, fires, rubble, collapsed buildings) whose signal
-attenuation and line-of-sight blocking change what routes are possible.
-Five routing protocols run behind one interface, threads model a live,
-moving network, and both a console and a Swing front-end sit over the same
-simulation core.
+A post-disaster emergency mesh network simulator written in Java 21: nodes (survivors, rescue teams, static relays, base stations) route emergency packets across a disaster area obstructed by flood zones, fire fronts, rubble fields, and collapsed buildings.
 
-See `EXECUTION_PLAN.md` for the full phase-by-phase design and rationale, and
-`PROGRESS_NOTES.md` for what has actually been built so far and why certain
-choices were made.
+Six routing strategies (BFS, Dijkstra, EnergyAwareDijkstra, AODV, DSR, and Epidemic store-carry-forward) run over a shared simulation core. Features live thread-based movement & energy drain, SQLite persistence, Swing GUI, CLI front-end, and an automated headless `--batch` runner.
 
-## Requirements
+---
 
-- JDK 21 (LTS) — `java -version` and `javac -version` must both say 21.
-- Maven (recommended) — resolves `org.xerial:sqlite-jdbc` and JUnit 5 automatically.
+## Key Features
 
-## Build & run
+- **Java 21 Stack & Features:** Records, sealed interfaces (`Obstacle`), pattern matching for switch, virtual threads (`Thread.ofVirtual()`), and structured concurrency (`StructuredTaskScope.ShutdownOnFailure`).
+- **Six Routing Protocols:**
+  - BFS (shortest hop count)
+  - Dijkstra (quality-weighted shortest path)
+  - EnergyAwareDijkstra (steers around low-battery nodes)
+  - AODV (reactive route discovery with caching)
+  - DSR (source-routed path discovery)
+  - Epidemic (store-carry-forward for partitioned networks)
+- **Front-Ends:**
+  - **Swing GUI:** Map panel with live link quality, obstacle overlays, cyan route highlighting, node table inspector, visible scrolling event log, pause/resume control, and file exports.
+  - **Console Menu CLI:** Interactive CLI with live simulation mode, CSV loading, DB persistence, and census summaries.
+  - **Headless Batch Mode:** Automated multi-run evaluation across protocols, scenarios, and random seeds with summary tables and CSV export.
+- **Persistence & Datasets:** SQLite DB persistence via JDBC DAOs (`ScenarioDao`, `SimRunDao`), CSV loader (`DatasetLoader`), report generator (`ReportWriter`), and CSV exporter (`CsvExporter`).
 
-```bash
-./build.sh              # mvn package -> target/mesh-sim.jar
-./run.sh --gui          # launches the Swing app (default)
-./run.sh --cli          # launches the original console menu
-```
+---
 
-`StructuredTaskScope` (used to race routing protocols concurrently) is a
-**preview API** in JDK 21, so both the build and the run step pass
-`--enable-preview` — already wired into `pom.xml`, `build.sh`, and `run.sh`.
+## Build & Execution
 
-### Manual compilation path (no Maven)
+### Prerequisites
+- JDK 21 (LTS) — javac and java must support Java 21 with `--enable-preview`.
+- Apache Maven 3.9+ (or use local JDK javac command).
 
-The syllabus separately asks for the compilation/execution process to be
-demonstrable without a build tool hiding it:
+### Command Line Options
 
 ```bash
-mkdir -p out
-find src/main/java -name "*.java" > sources.txt
-javac -d out --release 21 --enable-preview -cp lib/sqlite-jdbc.jar @sources.txt
-java --enable-preview -cp "out:lib/sqlite-jdbc.jar" com.meshsim.Main --cli
+# Build fat runnable JAR
+./build.sh   # or mvn package
+
+# Launch Swing GUI (Default)
+java --enable-preview -jar target/mesh-sim.jar --gui
+
+# Launch Console CLI
+java --enable-preview -jar target/mesh-sim.jar --cli
+
+# Launch Automated Batch Mode (N runs per combo)
+java --enable-preview -jar target/mesh-sim.jar --batch src/main/resources 5
+
+# Run with Deterministic Seed
+java --enable-preview -jar target/mesh-sim.jar --seed=12345 --batch src/main/resources 5
 ```
 
-(This requires `sqlite-jdbc.jar` to already be on disk under `lib/` — Maven
-fetches it automatically, this path does not.)
+---
 
-## Architecture
+## Unit Test Suite
 
-```
-src/main/java/com/meshsim/
-├── Main.java            --cli | --gui entry point over one shared simulation core
-├── model/                Point, Node, NodeType, Obstacle (sealed) + 4 obstacle records,
-│                         Scenario (Cloneable), Message, Priority
-├── network/               Link, MeshNetwork, PathLossModel
-├── routing/               Router, MobileRouter, AbstractRouter, BFSRouter, DijkstraRouter,
-│                         EnergyAwareDijkstraRouter, AODVRouter, DSRRouter, EpidemicRouter
-├── energy/                 EnergyModel, RadioProfile
-├── concurrent/             SimulationClock, NodeWorker, BatteryDrainer, MobilityEngine,
-│                         EventBus, SimulationEvent, PacketQueue, Simulator
-├── io/                     DatasetLoader, SimulationLogger, ReportWriter, CsvExporter, StateSerializer
-├── exception/              MeshSimulationException hierarchy (checked + unchecked)
-├── util/                   Repository<T>, Identifiable, TopK, BatteryLeaderboard, MetricsAggregator
-├── persistence/            ConnectionFactory, ScenarioDao/JdbcScenarioDao, SimRunDao/JdbcSimRunDao
-├── gui/                    MeshSimFrame, MapPanel, ControlPanel, NodeTableModel
-└── cli/                    ConsoleMenu (the original console front-end, kept working)
-```
-
-## Syllabus-to-code map
-
-| Unit | Concept | Where |
-|---|---|---|
-| 1 | Static members, access specifiers, Object overrides | `model/Node.java` |
-| 2 | Sealed interfaces, records, pattern matching for switch | `model/Obstacle.java` and its 4 record implementations |
-| 2 | Abstract classes vs interfaces, `final` template method | `routing/Router.java`, `routing/AbstractRouter.java` |
-| 2 | Extending interfaces | `routing/MobileRouter.java` (implemented only by `EpidemicRouter`) |
-| 3 | Custom checked/unchecked exception hierarchy | `exception/` |
-| 3 | Character/byte streams, try-with-resources | `io/DatasetLoader.java`, `io/StateSerializer.java` |
-| 3 | `StringBuffer` (deliberate, concurrent-safe) | `io/SimulationLogger.java` |
-| 4 | Generics, bounded types, type erasure note | `util/Repository.java`, `util/TopK.java` |
-| 4 | Both thread-creation styles, daemon threads, thread groups | `concurrent/SimulationClock.java` (extends Thread), `concurrent/NodeWorker.java` (Runnable), `concurrent/BatteryDrainer.java`, `concurrent/Simulator.java` |
-| 4 | Virtual threads, structured concurrency | `concurrent/Simulator.java` |
-| 4 | `synchronized` vs `ReentrantReadWriteLock` | `energy/EnergyModel.java` vs `network/MeshNetwork.java` |
-| 5 | `TreeSet`/`SortedSet`, `Arrays` utility class | `util/BatteryLeaderboard.java`, `util/MetricsAggregator.java` |
-| 5 | JDBC + DAO, transactions | `persistence/` |
-| 5 (K6) | Swing desktop app | `gui/` |
-
-## Sample data
-
-`src/main/resources/sample-scenario.csv` is a small, well-formed dataset for
-`DatasetLoader`. Corrupt copies of it (bad column count, unknown type,
-non-numeric coordinate, negative energy) are exercised directly in
-`DatasetLoaderTest`.
-
-## Tests
-
+Run unit tests via Maven:
 ```bash
 mvn test
 ```
 
-Covers `BFSRouter` and `DijkstraRouter` on hand-built graphs, and all four
-named `DatasetLoader` failure cases.
+### Test Suite Results (12 / 12 Passing)
+- `DatasetLoaderTest` (5 tests): Bad column count, unknown type, non-numeric values, negative energy, well-formed CSV loading.
+- `BFSRouterTest` (2 tests): 5-hop chain geometry (50m spacing) and out-of-range unreachable node handling.
+- `DijkstraRouterTest` (1 test): Detour path `S -> M -> D` around RubbleField obstacle.
+- `PathLossModelTest` (2 tests): Deterministic seed matching and shadowing variations.
+- `PartitionedNetworkTest` (2 tests): End-to-end router failure across FireRegion wall vs Epidemic store-carry-forward delivery upon carrier mobility.
+
+---
+
+## Viva Demo Script (5–10 Minute Walkthrough)
+
+1. **Launch GUI:** Run `java --enable-preview -jar target/mesh-sim.jar --gui`.
+2. **Inspect Initial Topology:** Observe 6 nodes, obstacle overlays (RubbleField & FloodZone), node table inspector, and status bar.
+3. **Start Simulation:** Click **Start**. Note tick counter advancing in status bar and start event in scrolling event log.
+4. **Pause & Resume:** Click **Pause** (status bar shows "Paused"), then **Resume**.
+5. **Send Message & Route Highlighting:**
+   - Select node **N1** on map panel.
+   - Click **Send Message**.
+   - Choose destination **N6** and protocol **EnergyAwareDijkstra**.
+   - Observe cyan highlighted path on map panel and `FORWARD` / `DELIVERED` logs firing as virtual node threads process inboxes.
+6. **File Persistence & Export:**
+   - Go to **File -> Save scenario to DB**.
+   - Click **File -> Export report...** to save plain-text run summary.
+   - Click **File -> Export CSV...** to save node table data.
+7. **Batch Mode Demonstration:**
+   - Run `java --enable-preview -jar target/mesh-sim.jar --batch src/main/resources 5`.
+   - Inspect console output comparison matrix and generated `batch_comparison.csv`.
