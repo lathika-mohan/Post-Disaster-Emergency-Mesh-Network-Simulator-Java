@@ -52,8 +52,11 @@ public final class MeshSimFrame extends JFrame {
         eventLog.setEditable(false);
         JScrollPane logScroll = new JScrollPane(eventLog);
         logScroll.setPreferredSize(new Dimension(0, 140));
-        add(logScroll, BorderLayout.SOUTH);
-        add(statusBar, BorderLayout.PAGE_END);
+
+        JPanel south = new JPanel(new BorderLayout());
+        south.add(logScroll, BorderLayout.CENTER);
+        south.add(statusBar, BorderLayout.SOUTH);
+        add(south, BorderLayout.SOUTH);
 
         setJMenuBar(buildMenuBar());
 

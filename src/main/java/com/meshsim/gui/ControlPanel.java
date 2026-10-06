@@ -20,6 +20,7 @@ public final class ControlPanel extends JPanel {
 
         add(new JLabel("Protocol"));
         protocolBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+        protocolBox.setMaximumSize(protocolBox.getPreferredSize());
         add(protocolBox);
         add(Box.createVerticalStrut(10));
 

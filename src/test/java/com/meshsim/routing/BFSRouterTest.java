@@ -18,11 +18,11 @@ class BFSRouterTest {
 
     @BeforeEach
     void setUp() {
-        Scenario scenario = new Scenario("test", "6-node line", 300, 100);
-        // A straight chain 25m apart, well within the 60m default range:
+        Scenario scenario = new Scenario("test", "6-node line", 350, 100);
+        // A straight chain 50m apart, within the 60m default range (skip-one pairs 100m > 60m):
         // N1 - N2 - N3 - N4 - N5 - N6
         for (int i = 1; i <= 6; i++) {
-            scenario.addNode(Node.withId("N" + i, NodeType.STATIC_RELAY, new Point(i * 25, 50), 1.0));
+            scenario.addNode(Node.withId("N" + i, NodeType.STATIC_RELAY, new Point(i * 50, 50), 1.0));
         }
         network = new MeshNetwork(scenario);
     }
